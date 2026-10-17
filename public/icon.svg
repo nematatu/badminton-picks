@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="128" fill="#0e6b4f"/>
+  <g transform="translate(136, 120)" fill="none" stroke="#ffffff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Shuttlecock cork -->
+    <circle cx="120" cy="210" r="30" fill="#ffffff"/>
+    <!-- Shuttlecock feathers cone -->
+    <path d="M120 180 L40 40 L200 40 Z" fill="rgba(255,255,255,0.1)"/>
+    <path d="M85 40 L108 180"/>
+    <path d="M155 40 L132 180"/>
+    <path d="M56 90 L184 90"/>
+    <path d="M72 135 L168 135"/>
+  </g>
+</svg>

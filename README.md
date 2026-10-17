@@ -1,44 +1,42 @@
-# badminton-picks
+# RALLY PICKS (私を構成するバドミントンの試合)
 
-バドミントンの好きな試合を共有するアプリの開発用リポジトリです。
-現在は [Void](https://void.cloud/guide/quickstart) の公式スターターのみです。
-YouTube連携、投稿のCRUD、共有ページ、OGP、PWAは未実装です。
+YouTubeの動画URLから好きなバドミントン試合を選び、ひとことメモを添えて「私を構成する試合」カードとして共有できるWebアプリケーションです。
 
-## ローカルで起動する
+## 主な機能
 
-Node.js 24.21.0以上とnpmを使用します。
+- **YouTube URL からの試合追加**: 公式大会や感動した試合のURLを貼るだけで、タイトル・サムネイル・チャンネル名を即座に取得
+- **インタラクティブな選集編集**: 上下移動ボタンによる並び替え、ひとことメモの追加、削除
+- **美しい OGP 画像の動的生成**: 選んだ試合のサムネイルを並べた1200×630のPNG画像をCloudflare Workers上で動的レンダリング（Satori + Resvg-wasm）
+- **SNS シェア**: 𝕏 (Twitter) へのワンクリック投稿、リンクコピー、Web Share API 対応
+- **アカウント不要の所有者管理**: 端末CookieのSHA-256ハッシュによるシームレスな編集・削除権限管理
+- **モバイルファースト & PWA**: スマートフォンでの片手操作に最適化したUI、ホーム画面追加に対応
+
+## 技術スタック
+
+- **フレームワーク**: [Void](https://void.cloud) (Vite+ / Cloudflare Workers)
+- **UI**: React 19, TypeScript
+- **データベース**: Cloudflare D1 (SQLite) + Drizzle ORM
+- **画像生成**: Satori (0.30.0) + @resvg/resvg-wasm
+
+## ローカルでの起動方法
 
 ```sh
-npm ci
+npm install
 npm run dev
 ```
 
-表示されたローカルURLを開きます。標準ポートは `http://localhost:5173` です。
-公式スターターのメッセージ一覧と追加フォームが表示されます。
-`/api/hello` でサンプルAPIを確認できます。
+ブラウザで表示されたURL（通常 `http://localhost:5173`）を開きます。
 
-構成はVoid、Vite+、React、TypeScript、D1です。
-開発用データベースはローカルで動作します。
-サンプルデータを投入する場合は `npx void db seed` を実行します。
-このコマンドはローカルデータベースをリセットします。
+### データベースのマイグレーションとシード
 
-## 検証する
+```sh
+npx void db migrate
+npx void db seed
+```
+
+### 型チェックとビルド
 
 ```sh
 npm run typecheck
 npm run build
 ```
-
-## 編集する
-
-- `pages/index.tsx` にサンプル画面があります。
-- `pages/index.server.ts` にデータ取得とフォーム処理があります。
-- `routes/api/hello.ts` にサンプルAPIがあります。
-- `db/schema.ts` にメッセージテーブルの定義があります。
-- `db/migrations/` に生成済みマイグレーションがあります。
-
-スキーマを変更した場合は `npx void db generate` でマイグレーションを生成します。
-生成内容を確認してからコミットしてください。
-
-Cloudflareへのデプロイ設定、ログイン、本番リソースの作成は行っていません。
-起動とビルドだけではデプロイされません。

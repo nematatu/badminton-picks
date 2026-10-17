@@ -1,0 +1,17 @@
+{
+  "name": "RALLY PICKS - 私を構成するバドミントンの試合",
+  "short_name": "RallyPicks",
+  "description": "YouTubeの試合動画を選んで「私を構成する試合」カードを作ってシェアできるWebアプリ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8faf8",
+  "theme_color": "#0e6b4f",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
