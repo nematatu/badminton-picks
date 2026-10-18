@@ -38,7 +38,7 @@ export const GET = defineHandler(async (c) => {
   if (!id) return c.text("Not found", 404);
   const col = await loadCollection(id);
   if (!col) return c.text("Not found", 404);
-  const cache = await caches.open("rally-picks-og-v2");
+  const cache = await caches.open("rally-picks-og-v3");
   const key = new Request(new URL(`/og/${id}?v=${col.revision}`, c.req.url));
   const cached = await cache.match(key);
   let response: Response;
@@ -59,7 +59,7 @@ export const GET = defineHandler(async (c) => {
     const element = h("div", { style: { display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: 32,
       background: "#ffffff", color: "#242624", fontFamily: "Noto Sans JP", justifyContent: "space-between" } },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", height: 38, borderBottom: "1px solid #dfe2df", paddingBottom: 12 } },
-        fontBuffer && h("div", { style: { fontSize: 20, color: "#bd322e", fontWeight: 700 } }, "RALLY PICKS"),
+        fontBuffer && h("div", { style: { fontSize: 20, color: "#176b4c", fontWeight: 700 } }, "RALLY PICKS"),
         fontBuffer && h("div", { style: { fontSize: 16, color: "#626862" } }, `${items.length}試合`)),
       fontBuffer && h("div", { style: { display: "flex", height: 54, alignItems: "center", fontSize: 26, fontWeight: 700, overflow: "hidden" } }, col.title.slice(0, 42)),
       h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, width: 1136, height: 420 } }, ...cells),
