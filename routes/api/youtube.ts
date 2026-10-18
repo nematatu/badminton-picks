@@ -12,9 +12,11 @@ export const GET = defineHandler(async (c) => {
     return c.json({ error: "有効なYouTubeの動画URLではありません" }, 400);
   }
 
-  const meta = await fetchYouTubeMeta(videoId);
+  let meta;
+  try { meta = await fetchYouTubeMeta(videoId); }
+  catch { return c.json({ error: "YouTubeに接続できませんでした。少し待ってからお試しください。" }, 502); }
   if (!meta) {
-    return c.json({ error: "動画情報を取得できませんでした" }, 404);
+    return c.json({ error: "この動画は取得できません。公開状態やURLをご確認ください" }, 404);
   }
 
   return c.json(meta);

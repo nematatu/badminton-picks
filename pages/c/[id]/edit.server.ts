@@ -1,110 +1,51 @@
 import { defineHandler, defineHead, type InferProps } from "void";
 import { db, eq, and } from "void/db";
-import { collections, type PickItem } from "@schema";
+import { collections } from "@schema";
+import { loadCollection } from "../../../src/lib/collection.server";
 import { getOwnerHash } from "../../../src/lib/auth";
+import { editSchema, readJson, revisionSchema } from "../../../src/lib/collection";
 
 export type Props = InferProps<typeof loader>;
-
 export const loader = defineHandler(async (c) => {
+  c.header("Cache-Control", "private, no-store");
   const id = c.req.param("id");
-  if (!id) return c.text("Not found", 404);
-
-  const [col] = await db.select().from(collections).where(eq(collections.id, id));
-  if (!col) return c.text("Not found", 404);
-
-  const ownerHash = await getOwnerHash(c);
-  if (!ownerHash || col.ownerHash !== ownerHash) {
-    return c.text("この選集の編集権限がありません（作成した端末・ブラウザからのみ編集できます）。", 403);
-  }
-
-  return {
-    collection: {
-      id: col.id,
-      title: col.title,
-      authorName: col.authorName,
-      items: col.items || [],
-    },
-  };
+  if (!id) return c.text("選集が見つかりません。", 404);
+  const col = await loadCollection(id);
+  if (!col) return c.text("選集が見つかりません。", 404);
+  if (col.ownerHash !== await getOwnerHash(c)) return c.text("作成したブラウザからのみ編集できます。", 403);
+  const { ownerHash, ...collection } = col;
+  return { collection };
 });
-
 export const actions = {
-  // Update action: POST /c/[id]/edit?update
   update: defineHandler(async (c) => {
-    const id = c.req.param("id");
-    if (!id) return c.json({ error: "Invalid ID" }, 400);
-
     const ownerHash = await getOwnerHash(c);
-    if (!ownerHash) {
-      return c.json({ error: "権限がありません" }, 403);
-    }
-
-    const [col] = await db.select().from(collections).where(eq(collections.id, id));
-    if (!col || col.ownerHash !== ownerHash) {
-      return c.json({ error: "権限がありません" }, 403);
-    }
-
-    const body = await c.req.json();
-    const title = String(body.title || col.title).trim().slice(0, 100);
-    const authorName = String(body.authorName || col.authorName).trim().slice(0, 50);
-    const rawItems = Array.isArray(body.items) ? body.items : [];
-
-    const seenIds = new Set<string>();
-    const items: PickItem[] = [];
-
-    for (const it of rawItems) {
-      const videoId = String(it.videoId || "").trim();
-      if (!videoId || seenIds.has(videoId)) continue;
-      seenIds.add(videoId);
-
-      items.push({
-        videoId,
-        title: String(it.title || "YouTube Match").trim().slice(0, 120),
-        author: String(it.author || "YouTube").trim().slice(0, 60),
-        note: String(it.note || "").trim().slice(0, 280),
-      });
-
-      if (items.length >= 9) break;
-    }
-
-    if (items.length === 0) {
-      return c.json({ error: "少なくとも1試合追加してください。" }, 400);
-    }
-
-    await db
-      .update(collections)
-      .set({
-        title,
-        authorName,
-        items,
-        revision: col.revision + 1,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(and(eq(collections.id, id), eq(collections.ownerHash, ownerHash)));
-
-    return c.redirect(`/c/${id}`);
+    if (!ownerHash) return c.json({ error: "作成したブラウザから編集してください。" }, 403);
+    const parsed = editSchema.safeParse(await readJson(c.req.raw));
+    if (!parsed.success || parsed.data.id !== c.req.param("id"))
+      return c.json({ error: "入力内容を確認してください。試合は1〜9件、メモは240字までです。" }, 422);
+    const { id, revision, ...data } = parsed.data;
+    const [updated] = await db.update(collections).set({
+      ...data, revision: revision + 1, updatedAt: new Date().toISOString(),
+    }).where(and(eq(collections.id, id), eq(collections.ownerHash, ownerHash),
+      eq(collections.revision, revision))).returning({ id: collections.id });
+    if (!updated) return c.json({ error: "別の画面で更新されたか、編集権限がありません。入力を控えてからページを開き直してください。" }, 409);
+    return c.json({ location: `/c/${id}` });
   }),
-
-  // Delete action: POST /c/[id]/edit?delete
   delete: defineHandler(async (c) => {
     const id = c.req.param("id");
-    if (!id) return c.json({ error: "Invalid ID" }, 400);
-
+    if (!id) return c.json({ error: "選集が見つかりません。" }, 404);
     const ownerHash = await getOwnerHash(c);
-    if (!ownerHash) {
-      return c.json({ error: "権限がありません" }, 403);
-    }
-
-    await db
-      .delete(collections)
-      .where(and(eq(collections.id, id), eq(collections.ownerHash, ownerHash)));
-
-    return c.redirect("/");
+    if (!ownerHash) return c.json({ error: "作成したブラウザから削除してください。" }, 403);
+    const parsed = revisionSchema.safeParse(await readJson(c.req.raw));
+    if (!parsed.success) return c.json({ error: "ページを開き直してから削除してください。" }, 422);
+    const [deleted] = await db.delete(collections).where(and(
+      eq(collections.id, id), eq(collections.ownerHash, ownerHash),
+      eq(collections.revision, parsed.data.revision),
+    )).returning({ id: collections.id });
+    if (!deleted) return c.json({ error: "選集が更新されたか、削除権限がありません。ページを開き直してください。" }, 409);
+    return c.json({ location: "/" });
   }),
 };
-
-export const head = defineHead(() => {
-  return {
-    title: "選集を編集する | RALLY PICKS",
-    meta: [{ name: "robots", content: "noindex" }],
-  };
-});
+export const head = defineHead(() => ({
+  title: "選集を編集する | RALLY PICKS", meta: [{ name: "robots", content: "noindex" }],
+}));

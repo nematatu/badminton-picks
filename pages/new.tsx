@@ -6,7 +6,6 @@ export default function NewPage({ newId }: Props) {
     <CollectionEditor
       initialData={{ id: newId }}
       submitUrl="/new"
-      submitMethod="POST"
       submitLabel="選集を公開する"
       isEdit={false}
     />

@@ -25,6 +25,8 @@ export default function EditPage({ collection }: Props) {
     try {
       const res = await fetch(`/c/${collection.id}/edit?delete`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ revision: collection.revision }),
       });
 
       if (!res.ok) {
@@ -45,18 +47,16 @@ export default function EditPage({ collection }: Props) {
       <CollectionEditor
         initialData={collection}
         submitUrl={`/c/${collection.id}/edit?update`}
-        submitMethod="POST"
         submitLabel="変更を保存する"
         isEdit={true}
       />
 
-      {/* Danger Zone: Delete Collection */}
       <div className="danger-zone-wrap">
         <div className="danger-zone card">
           <div className="danger-zone-text">
             <h3 className="danger-title">この選集を削除する</h3>
             <p className="text-muted text-xs">
-              公開ページと共有画像が削除されます。この操作は取り消せません。
+              公開ページと共有画像のURLが無効になります。この操作は取り消せません。
             </p>
           </div>
           <button

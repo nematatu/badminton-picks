@@ -1,42 +1,37 @@
-# RALLY PICKS (私を構成するバドミントンの試合)
+# RALLY PICKS
 
-YouTubeの動画URLから好きなバドミントン試合を選び、ひとことメモを添えて「私を構成する試合」カードとして共有できるWebアプリケーションです。
+YouTubeのバドミントン動画を1〜9試合選び、メモを添えて公開・共有するアプリです。Void、React、Cloudflare D1を使います。
 
-## 主な機能
+## ローカル開発
 
-- **YouTube URL からの試合追加**: 公式大会や感動した試合のURLを貼るだけで、タイトル・サムネイル・チャンネル名を即座に取得
-- **インタラクティブな選集編集**: 上下移動ボタンによる並び替え、ひとことメモの追加、削除
-- **美しい OGP 画像の動的生成**: 選んだ試合のサムネイルを並べた1200×630のPNG画像をCloudflare Workers上で動的レンダリング（Satori + Resvg-wasm）
-- **SNS シェア**: 𝕏 (Twitter) へのワンクリック投稿、リンクコピー、Web Share API 対応
-- **アカウント不要の所有者管理**: 端末CookieのSHA-256ハッシュによるシームレスな編集・削除権限管理
-- **モバイルファースト & PWA**: スマートフォンでの片手操作に最適化したUI、ホーム画面追加に対応
-
-## 技術スタック
-
-- **フレームワーク**: [Void](https://void.cloud) (Vite+ / Cloudflare Workers)
-- **UI**: React 19, TypeScript
-- **データベース**: Cloudflare D1 (SQLite) + Drizzle ORM
-- **画像生成**: Satori (0.30.0) + @resvg/resvg-wasm
-
-## ローカルでの起動方法
+Node.js 24.21.0以降を使用します。
 
 ```sh
-npm install
+npm ci
+npx void db migrate
 npm run dev
 ```
 
-ブラウザで表示されたURL（通常 `http://localhost:5173`）を開きます。
+表示されたURLを開きます。初回は選集のない状態から始まります。
 
-### データベースのマイグレーションとシード
+## 操作
 
-```sh
-npx void db migrate
-npx void db seed
-```
+- YouTube URLを追加し、並び替え・入れ替え・メモの編集を行います。試合を外した直後は取り消せます。
+- 公開リンクから選集を閲覧できます。共有PNGには選んだ全試合を表示します。
+- 作成したブラウザのCookieが編集権限になります。Cookieを消した場合や別のブラウザからは編集できません。アカウント・復旧機能はありません。
+- 更新・削除はrevisionも照合し、古い画面からの操作を拒否します。
+- manifestとSVGアイコンを用意しています。オフライン機能や各OSでのインストール動作は検証していません。
 
-### 型チェックとビルド
+## 確認
 
 ```sh
 npm run typecheck
 npm run build
+node scripts/smoke.mjs
 ```
+
+smokeは起動中のローカルアプリ専用です。使い捨ての検証選集を作成し、YouTube取得・入力拒否・所有権・競合・SSRメタタグ・9試合PNG・削除後404を検証します。外部YouTubeへの接続が必要です。
+
+共有PNGはSatoriとResvg WASMで生成し、5分間キャッシュします。外部画像の取得失敗時は欠落を明示します。フォント取得に失敗した場合は文字を省いて画像を生成します。配信速度の保証値はありません。
+
+画面の参照元と採用内容は[DESIGN.md](DESIGN.md)に記録しています。

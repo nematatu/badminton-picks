@@ -1,6 +1,6 @@
 import { defineHandler, defineHead, type InferProps } from "void";
-import { db, eq } from "void/db";
-import { collections, type PickItem } from "@schema";
+import { type PickItem } from "@schema";
+import { loadCollection } from "../../src/lib/collection.server";
 import { getOwnerHash } from "../../src/lib/auth";
 
 export interface CollectionDetail {
@@ -16,10 +16,11 @@ export interface CollectionDetail {
 export type Props = InferProps<typeof loader>;
 
 export const loader = defineHandler(async (c) => {
+  c.header("Cache-Control", "private, no-store");
   const id = c.req.param("id");
   if (!id) return c.text("Not found", 404);
 
-  const [col] = await db.select().from(collections).where(eq(collections.id, id));
+  const col = await loadCollection(id);
   if (!col) return c.text("Not found", 404);
 
   const ownerHash = await getOwnerHash(c);
@@ -35,7 +36,7 @@ export const loader = defineHandler(async (c) => {
     isOwner,
   };
 
-  return { collection };
+  return { collection, pageUrl: new URL(`/c/${id}`, c.req.url).href };
 });
 
 export const head = defineHead<Props>((c, props) => {
@@ -54,6 +55,7 @@ export const head = defineHead<Props>((c, props) => {
 
   return {
     title: `${title} - 選者: ${authorName} | RALLY PICKS`,
+    link: [{ rel: "canonical", href: pageUrl }],
     meta: [
       { name: "description", content: desc },
       { property: "og:type", content: "article" },

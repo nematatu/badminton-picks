@@ -1,370 +1,161 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useRouter } from "@void/react";
-import { ShuttlecockIcon } from "./Icons";
 import type { PickItem } from "../../db/schema";
+import CollectionPreview, { VideoImage } from "./CollectionPreview";
+import { MAX_PICKS, errorSchema, resultSchema } from "../lib/collection";
+import { youTubeMetaSchema } from "../lib/youtube";
 
-export interface EditorProps {
-  initialData?: {
-    id?: string;
-    title?: string;
-    authorName?: string;
-    items?: PickItem[];
-  };
-  submitUrl: string;
-  submitMethod?: "POST" | "PUT";
-  submitLabel?: string;
-  isEdit?: boolean;
-}
-
-export default function CollectionEditor({
-  initialData,
-  submitUrl,
-  submitMethod = "POST",
-  submitLabel = "選集を公開する",
-  isEdit = false,
-}: EditorProps) {
+export default function CollectionEditor({ initialData, submitUrl, submitLabel, isEdit = false }: {
+  initialData: { id: string; title?: string; authorName?: string; items?: PickItem[]; revision?: number };
+  submitUrl: string; submitLabel: string; isEdit?: boolean;
+}) {
   const router = useRouter();
-
-  const [id] = useState(initialData?.id || "");
-  const [title, setTitle] = useState(initialData?.title || "私を構成するバドミントンの3試合");
-  const [authorName, setAuthorName] = useState(initialData?.authorName || "");
-  const [items, setItems] = useState<PickItem[]>(initialData?.items || []);
-
+  const [title, setTitle] = useState(initialData.title || "私を構成するバドミントンの試合");
+  const [authorName, setAuthorName] = useState(initialData.authorName || "");
+  const [items, setItems] = useState<PickItem[]>(initialData.items || []);
   const [inputUrl, setInputUrl] = useState("");
-  const [isFetching, setIsFetching] = useState(false);
-  const [urlError, setUrlError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [urlError, setUrlError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [message, setMessage] = useState("");
+  const [removed, setRemoved] = useState<{ item: PickItem; index: number } | null>(null);
+  const [replacingId, setReplacingId] = useState<string | null>(null);
+  const urlInput = useRef<HTMLInputElement>(null);
+  const [dirty, setDirty] = useState(false);
+  const busy = pending || saving;
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    const guardLink = (event: MouseEvent) => {
+      if (!(event.target instanceof Element) || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      const link = event.target.closest("a");
+      if (!link || link.target === "_blank" || link.hasAttribute("download") || link.hash) return;
+      if (!window.confirm("保存していない変更があります。保存せずに移動しますか？")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", warn);
+    document.addEventListener("click", guardLink, true);
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("click", guardLink, true);
+    };
+  }, [dirty]);
 
-  // Add YouTube video via /api/youtube
-  async function handleAddVideo() {
-    if (!inputUrl.trim()) return;
-    setUrlError(null);
-    setIsFetching(true);
-
+  async function addVideo() {
+    if (busy || !inputUrl.trim()) return;
+    setPending(true); setUrlError(""); setMessage("");
     try {
-      const res = await fetch(`/api/youtube?url=${encodeURIComponent(inputUrl.trim())}`);
-      const data = (await res.json()) as { error?: string; videoId: string; title: string; author: string };
-
-      if (!res.ok) {
-        setUrlError(data.error || "動画情報を取得できませんでした");
-        setIsFetching(false);
-        return;
+      const response = await fetch(`/api/youtube?url=${encodeURIComponent(inputUrl.trim())}`);
+      const data: unknown = await response.json();
+      const meta = youTubeMetaSchema.safeParse(data);
+      if (!response.ok || !meta.success) {
+        setUrlError(errorSchema.safeParse(data).data?.error || "動画情報を取得できませんでした。"); return;
       }
-
-      if (items.some((it) => it.videoId === data.videoId)) {
-        setUrlError("この試合はすでに追加されています");
-        setIsFetching(false);
-        return;
+      if (items.some((item) => item.videoId === meta.data.videoId && item.videoId !== replacingId)) {
+        setUrlError("この試合はすでに追加されています。"); return;
       }
-
-      if (items.length >= 9) {
-        setUrlError("追加できるのは最大9試合までです");
-        setIsFetching(false);
-        return;
-      }
-
-      setItems([
-        ...items,
-        {
-          videoId: data.videoId,
-          title: data.title,
-          author: data.author,
-          note: "",
-        },
-      ]);
-      setInputUrl("");
-    } catch {
-      setUrlError("通信エラーが発生しました。もう一度お試しください。");
-    } finally {
-      setIsFetching(false);
-    }
+      setItems((current) => replacingId ? current.map((item) => item.videoId === replacingId
+        ? { ...meta.data, note: item.note } : item) : [...current, { ...meta.data, note: "" }]);
+      setInputUrl(""); setReplacingId(null); setDirty(true);
+      setMessage(replacingId ? "試合を入れ替えました。" : "試合を追加しました。");
+    } catch { setUrlError("通信できませんでした。URLを残していますので、もう一度お試しください。"); }
+    finally { setPending(false); }
   }
 
-  function handleMoveUp(index: number) {
-    if (index === 0) return;
-    const newItems = [...items];
-    const temp = newItems[index - 1];
-    newItems[index - 1] = newItems[index];
-    newItems[index] = temp;
-    setItems(newItems);
+  function move(index: number, offset: number) {
+    setItems((current) => {
+      const next = [...current];
+      [next[index], next[index + offset]] = [next[index + offset], next[index]];
+      return next;
+    });
+    setDirty(true); setMessage(`${index + 1}番目の試合を${offset < 0 ? "上" : "下"}へ移動しました。`);
   }
 
-  function handleMoveDown(index: number) {
-    if (index === items.length - 1) return;
-    const newItems = [...items];
-    const temp = newItems[index + 1];
-    newItems[index + 1] = newItems[index];
-    newItems[index] = temp;
-    setItems(newItems);
-  }
-
-  function handleRemove(index: number) {
-    setItems(items.filter((_, i) => i !== index));
-  }
-
-  function handleNoteChange(index: number, note: string) {
-    const newItems = [...items];
-    newItems[index] = { ...newItems[index], note };
-    setItems(newItems);
-  }
-
-  function handleTitleChange(index: number, newTitle: string) {
-    const newItems = [...items];
-    newItems[index] = { ...newItems[index], title: newTitle };
-    setItems(newItems);
-  }
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (items.length === 0) {
-      setSubmitError("少なくとも1試合動画を追加してください。");
-      return;
-    }
-    if (!title.trim()) {
-      setSubmitError("選集のタイトルを入力してください。");
-      return;
-    }
-
-    setSubmitError(null);
-    setIsSubmitting(true);
-
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setSaving(true); setSaveError("");
     try {
-      const payload = {
-        id,
-        title: title.trim(),
-        authorName: (authorName.trim() || "匿名プレイヤー").slice(0, 50),
-        items,
-      };
-
-      const res = await fetch(submitUrl, {
-        method: submitMethod,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      const response = await fetch(submitUrl, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...initialData, title, authorName, items }),
       });
-
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        setSubmitError(data.error || "保存に失敗しました。もう一度お試しください。");
-        setIsSubmitting(false);
+      const data: unknown = await response.json();
+      const result = resultSchema.safeParse(data);
+      if (!response.ok || !result.success) {
+        setSaveError(errorSchema.safeParse(data).data?.error || "保存できませんでした。入力内容はこの画面に残っています。");
         return;
       }
-
-      // If redirected to /c/:id
-      if (res.redirected) {
-        window.location.href = res.url;
-        return;
-      }
-
-      const redirectHeader = res.headers.get("Location");
-      if (redirectHeader) {
-        window.location.href = redirectHeader;
-        return;
-      }
-
-      // Default navigate to collection page
-      window.location.href = `/c/${id}`;
-    } catch {
-      setSubmitError("エラーが発生しました。通信環境を確認してください。");
-      setIsSubmitting(false);
-    }
+      setDirty(false);
+      router.flush(result.data.location);
+      await router.visit(result.data.location);
+    } catch { setSaveError("保存できませんでした。入力内容はこの画面に残っています。通信を確認して再試行してください。"); }
+    finally { setSaving(false); }
   }
 
-  return (
-    <div className="editor-container">
-      <div className="editor-nav">
-        <Link href={isEdit ? `/c/${id}` : "/"} className="back-link">
-          ← {isEdit ? "選集詳細へもどる" : "トップへもどる"}
-        </Link>
-      </div>
-
-      <div className="editor-header">
-        <h1 className="editor-title">{isEdit ? "選集を編集する" : "好きな試合を選ぶ"}</h1>
-        <p className="editor-subtitle">
-          YouTubeの試合URLを貼り付けて試合を追加し、見どころを添えて公開できます。
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} className="editor-form">
-        {/* Meta settings */}
-        <div className="editor-card card">
-          <div className="field-group">
-            <label className="field-label" htmlFor="col-title">
-              選集のタイトル <span className="required">必須</span>
-            </label>
-            <input
-              id="col-title"
-              type="text"
-              className="text-input"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="例: 私を構成するバドミントンの3試合"
-              maxLength={80}
-              required
-            />
-          </div>
-
-          <div className="field-group">
-            <label className="field-label" htmlFor="col-author">
-              選者のお名前 / ニックネーム
-            </label>
-            <input
-              id="col-author"
-              type="text"
-              className="text-input"
-              value={authorName}
-              onChange={(e) => setAuthorName(e.target.value)}
-              placeholder="例: たかし（バド歴8年）"
-              maxLength={40}
-            />
-          </div>
-        </div>
-
-        {/* Add video section */}
-        <div className="editor-card card">
-          <h2 className="card-section-title">試合（YouTube動画）を追加する</h2>
-          <p className="text-muted text-sm mb-3">
-            公式大会や感動した試合のYouTube URLを入力してください（3〜4試合がおすすめ）。
-          </p>
-
-          <div className="url-input-row">
-            <input
-              type="url"
-              className="text-input url-input"
-              value={inputUrl}
-              onChange={(e) => setInputUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleAddVideo();
-                }
-              }}
-              placeholder="https://www.youtube.com/watch?v=..."
-              disabled={isFetching || items.length >= 9}
-            />
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleAddVideo}
-              disabled={isFetching || !inputUrl.trim() || items.length >= 9}
-            >
-              {isFetching ? "取得中..." : "追加"}
-            </button>
-          </div>
-
-          {urlError && <div className="alert-error mt-2">{urlError}</div>}
-        </div>
-
-        {/* Picked items list */}
-        <div className="editor-card card">
-          <div className="items-header">
-            <h2 className="card-section-title">
-              選んだ試合リスト ({items.length} / 9)
-            </h2>
-            {items.length > 0 && (
-              <span className="text-muted text-xs">↑↓ボタンで並び順を変更できます</span>
-            )}
-          </div>
-
-          {items.length === 0 ? (
-            <div className="empty-picks">
-              <span className="empty-icon text-muted" aria-hidden="true">
-                <ShuttlecockIcon style={{ width: 36, height: 36 }} />
-              </span>
-              <p className="text-muted text-sm">
-                まだ試合が追加されていません。上の入力欄にYouTubeのURLを貼って「追加」してください。
-              </p>
-            </div>
-          ) : (
-            <div className="picks-list">
-              {items.map((item, index) => (
-                <div key={item.videoId} className="pick-item-card">
-                  <div className="pick-thumb-col">
-                    <img
-                      src={`https://img.youtube.com/vi/${item.videoId}/mqdefault.jpg`}
-                      alt={item.title}
-                      className="pick-thumb"
-                    />
-                    <div className="order-badge">#{index + 1}</div>
-                  </div>
-
-                  <div className="pick-detail-col">
-                    <input
-                      type="text"
-                      className="text-input pick-title-input"
-                      value={item.title}
-                      onChange={(e) => handleTitleChange(index, e.target.value)}
-                      placeholder="試合のタイトル"
-                      maxLength={120}
-                    />
-                    <span className="text-muted text-xs channel-name">
-                      {item.author}
-                    </span>
-
-                    <textarea
-                      className="text-area note-input"
-                      value={item.note || ""}
-                      onChange={(e) => handleNoteChange(index, e.target.value)}
-                      placeholder="ひとこと・選んだ理由（例: 第3ゲームのデュースの緊張感がたまらない。人生のベストゲーム）"
-                      rows={2}
-                      maxLength={240}
-                    />
-                  </div>
-
-                  <div className="pick-actions-col">
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      onClick={() => handleMoveUp(index)}
-                      disabled={index === 0}
-                      title="上へ移動"
-                      aria-label="上へ移動"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      onClick={() => handleMoveDown(index)}
-                      disabled={index === items.length - 1}
-                      title="下へ移動"
-                      aria-label="下へ移動"
-                    >
-                      ▼
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-icon btn-icon-delete"
-                      onClick={() => handleRemove(index)}
-                      title="削除"
-                      aria-label="削除"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+  return <div className="editor-container">
+    <Link href={isEdit ? `/c/${initialData.id}` : "/"} className="back-link">{isEdit ? "選集へ戻る" : "みんなの選集へ"}</Link>
+    <div className="page-heading"><h1>{isEdit ? "選集を編集する" : "好きな試合を選ぶ"}</h1>
+      <p>YouTubeのURLから、1〜9試合を選べます。</p></div>
+    <form onSubmit={save} className="editor-layout">
+      <fieldset disabled={saving} className="editor-fields">
+        <section className="editor-section">
+          <label className="field-label" htmlFor="youtube-url">{replacingId ? "入れ替える試合のURL" : "YouTubeの試合URL"}</label>
+          <div className="url-input-row"><input id="youtube-url" ref={urlInput} type="text" inputMode="url" autoCapitalize="none"
+            autoComplete="off" spellCheck={false} className="text-input" value={inputUrl}
+            onChange={(event) => setInputUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=…"
+            onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addVideo(); } }}
+            disabled={pending || (items.length >= MAX_PICKS && !replacingId)} aria-describedby="url-feedback" />
+            <button type="button" className="btn btn-primary" onClick={addVideo}
+              disabled={busy || !inputUrl.trim() || (items.length >= MAX_PICKS && !replacingId)}>
+              {pending ? "取得中…" : replacingId ? "入れ替え" : "追加"}</button></div>
+          {replacingId && <button type="button" className="text-link" disabled={busy} onClick={() => { setReplacingId(null); setInputUrl(""); }}>入れ替えをやめる</button>}
+          <div id="url-feedback">{urlError && <p className="error-message" role="alert">{urlError}</p>}</div>
+          <p className="status-message" role="status">{message || (items.length >= MAX_PICKS ? "9試合選びました。並び順やメモを整えて公開できます。" : "")}</p>
+        </section>
+        <section className="editor-section">
+          <div className="section-header"><h2>選んだ試合</h2><span>{items.length} / {MAX_PICKS}</span></div>
+          {removed && <div className="undo-notice" role="status"><span>試合を外しました。</span><button type="button" className="text-link"
+            disabled={items.length >= MAX_PICKS || busy || items.some((item) => item.videoId === removed.item.videoId)} onClick={() => {
+              setItems((current) => [...current.slice(0, removed.index), removed.item, ...current.slice(removed.index)]);
+              setRemoved(null); setDirty(true);
+            }}>取り消す</button></div>}
+          {items.length === 0 ? <p className="empty-picks">URLを追加すると、ここに試合が並びます。</p> : (
+            <ol className="picks-list">{items.map((item, index) => <li key={item.videoId} className="editor-pick">
+              <div className="pick-summary"><span className="pick-order">{index + 1}</span>
+                <div className="pick-thumbnail"><VideoImage videoId={item.videoId} title={item.title} /></div>
+                <div className="pick-info"><h3>{item.title}</h3><p>{item.author}</p></div></div>
+              <label className="sr-only" htmlFor={`note-${item.videoId}`}>{index + 1}試合目を選んだ理由</label>
+              <textarea id={`note-${item.videoId}`} className="text-area" value={item.note || ""} maxLength={240} rows={2}
+                placeholder="選んだ理由や、好きな場面（任意）" onChange={(event) => {
+                  setItems((current) => current.map((pick) => pick.videoId === item.videoId ? { ...pick, note: event.target.value } : pick)); setDirty(true);
+                }} />
+              <div className="pick-actions"><button type="button" className="small-action" disabled={busy || index === 0} onClick={() => move(index, -1)} aria-label={`${index + 1}試合目を上へ`}>↑ 上へ</button>
+                <button type="button" className="small-action" disabled={busy || index === items.length - 1} onClick={() => move(index, 1)} aria-label={`${index + 1}試合目を下へ`}>↓ 下へ</button>
+                <button type="button" className="small-action" disabled={busy} onClick={() => { setReplacingId(item.videoId); setInputUrl(""); urlInput.current?.focus(); }}>入れ替え</button>
+                <button type="button" className="small-action remove-action" disabled={busy} aria-label={`${index + 1}試合目を外す`} onClick={() => {
+                  setRemoved({ item, index }); setItems((current) => current.filter((pick) => pick.videoId !== item.videoId));
+                  if (replacingId === item.videoId) setReplacingId(null); setDirty(true);
+                }}>外す</button></div>
+            </li>)}</ol>
           )}
-        </div>
-
-        {/* Submit */}
-        {submitError && <div className="alert-error">{submitError}</div>}
-
-        <div className="submit-box">
-          <p className="device-notice text-muted text-xs">
-            ※ この端末のブラウザからいつでも再編集・削除できます（アカウント登録不要）。
-          </p>
-          <button
-            type="submit"
-            className="btn btn-primary btn-lg submit-btn"
-            disabled={isSubmitting || items.length === 0}
-          >
-            {isSubmitting ? "保存中..." : submitLabel}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
+        </section>
+        <section className="editor-section metadata-fields">
+          <div className="field-group"><label className="field-label" htmlFor="col-title">選集のタイトル</label>
+            <input id="col-title" className="text-input" value={title} maxLength={80} required onChange={(event) => { setTitle(event.target.value); setDirty(true); }} /></div>
+          <div className="field-group"><label className="field-label" htmlFor="col-author">あなたの名前 <span>任意</span></label>
+            <input id="col-author" className="text-input" value={authorName} maxLength={40} placeholder="ニックネーム・未入力なら匿名" onChange={(event) => { setAuthorName(event.target.value); setDirty(true); }} /></div>
+        </section>
+        {saveError && <p className="error-message" role="alert">{saveError}</p>}
+        <div className="submit-box"><p>公開後は誰でも見られます。編集・削除はこのブラウザから。<br />Cookieを消すと、再編集できなくなります。</p>
+          <button className="btn btn-primary" type="submit" disabled={busy || items.length === 0 || !title.trim()}>{saving ? "保存中…" : submitLabel}</button></div>
+      </fieldset>
+      <aside className="editor-preview"><h2>選集のプレビュー</h2>
+        <CollectionPreview items={items} title={title} authorName={authorName} />
+        <p>選んだ順に並びます。公開すると、画像付きのリンクで共有できます。</p></aside>
+    </form>
+  </div>;
 }

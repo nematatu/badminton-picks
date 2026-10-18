@@ -1,282 +1,85 @@
+import { createElement as h } from "react";
 import { defineHandler } from "void";
-import { db, eq } from "void/db";
-import { collections } from "@schema";
-import satori, { init } from "satori/standalone";
-import { Resvg, initWasm } from "@resvg/resvg-wasm";
-// @ts-ignore
-import yogaWasm from "satori/yoga.wasm?module";
-// @ts-ignore
-import resvgWasm from "@resvg/resvg-wasm/index_bg.wasm?module";
+import { loadCollection } from "../../src/lib/collection.server";
+import satori from "satori/standalone";
+import { Resvg } from "@resvg/resvg-wasm";
+import { initEngine } from "../../src/lib/og-engine";
 
-let ready: Promise<void> | null = null;
-function ensureEngine() {
-  ready ??= Promise.all([init(yogaWasm), initWasm(resvgWasm)]).then(() => {});
-  return ready;
-}
-
-let cachedFont: ArrayBuffer | null = null;
-async function getFont(): Promise<ArrayBuffer> {
-  if (cachedFont) return cachedFont;
-  // Fetch a subset of Noto Sans JP for Japanese text support
-  const css = await (
-    await fetch("https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700&display=swap")
-  ).text();
-  const fontUrl = css.match(/src: url\((.+?)\)/)?.[1];
-  if (!fontUrl) throw new Error("Font URL not found");
-  cachedFont = await (await fetch(fontUrl)).arrayBuffer();
-  return cachedFont;
-}
-
-function bufferToBase64(buffer: ArrayBuffer): string {
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-async function fetchThumbnailDataUri(videoId: string): Promise<string> {
+let fontData: ArrayBuffer | undefined;
+async function font() {
+  if (fontData) return fontData;
   try {
-    const url = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-    const res = await fetch(url);
-    if (res.ok) {
-      const buf = await res.arrayBuffer();
-      return `data:image/jpeg;base64,${bufferToBase64(buf)}`;
-    }
-  } catch {}
-  // 1x1 transparent pixel fallback
-  return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+    const css = await fetch("https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700&display=swap", { signal: AbortSignal.timeout(4000) });
+    if (!css.ok) return null;
+    const url = (await css.text()).match(/src: url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/)?.[1];
+    if (!url) return null;
+    const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (!response.ok) return null;
+    fontData = await response.arrayBuffer();
+    return fontData;
+  } catch { return null; }
+}
+
+async function thumbnail(videoId: string) {
+  if (!/^[\w-]{11}$/.test(videoId)) return null;
+  try {
+    const response = await fetch(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, { signal: AbortSignal.timeout(4000), redirect: "manual" });
+    if (!response.ok || !response.headers.get("content-type")?.startsWith("image/jpeg")) return null;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length > 500_000) return null;
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return `data:image/jpeg;base64,${btoa(binary)}`;
+  } catch { return null; }
 }
 
 export const GET = defineHandler(async (c) => {
   const id = c.req.param("id");
   if (!id) return c.text("Not found", 404);
-
-  const [col] = await db.select().from(collections).where(eq(collections.id, id));
+  const col = await loadCollection(id);
   if (!col) return c.text("Not found", 404);
-
-  await ensureEngine();
-  let font: ArrayBuffer;
-  try {
-    font = await getFont();
-  } catch {
-    // If external font fails, minimal fallback
-    font = new ArrayBuffer(0);
+  const cache = await caches.open("rally-picks-og-v2");
+  const key = new Request(new URL(`/og/${id}?v=${col.revision}`, c.req.url));
+  const cached = await cache.match(key);
+  let response: Response;
+  if (cached) response = cached;
+  else {
+    await initEngine();
+    const items = col.items.slice(0, 9);
+    const [fontBuffer, ...images] = await Promise.all([font(), ...items.map((item) => thumbnail(item.videoId))]);
+    const columns = items.length <= 2 ? items.length : 3;
+    const rows = Math.ceil(items.length / columns);
+    const width = (1136 - (columns - 1) * 8) / columns;
+    const height = (420 - (rows - 1) * 8) / rows;
+    const cells = images.map((src, index) => h("div", { key: index, style: {
+      display: "flex", width, height, position: "relative", background: "#e7eae7", overflow: "hidden", alignItems: "center", justifyContent: "center",
+    } }, src ? h("img", { src, width, height, style: { objectFit: "contain" } }) : (
+      fontBuffer ? h("div", { style: { fontSize: 16, color: "#626862" } }, "画像を取得できません") : null
+    )));
+    const element = h("div", { style: { display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: 32,
+      background: "#ffffff", color: "#242624", fontFamily: "Noto Sans JP", justifyContent: "space-between" } },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", height: 38, borderBottom: "1px solid #dfe2df", paddingBottom: 12 } },
+        fontBuffer && h("div", { style: { fontSize: 20, color: "#bd322e", fontWeight: 700 } }, "RALLY PICKS"),
+        fontBuffer && h("div", { style: { fontSize: 16, color: "#626862" } }, `${items.length}試合`)),
+      fontBuffer && h("div", { style: { display: "flex", height: 54, alignItems: "center", fontSize: 26, fontWeight: 700, overflow: "hidden" } }, col.title.slice(0, 42)),
+      h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, width: 1136, height: 420 } }, ...cells),
+      fontBuffer && h("div", { style: { display: "flex", alignItems: "center", fontSize: 14, color: "#626862", height: 24 } }, `選者 ${col.authorName}`),
+    );
+    const svg = await satori(element, { width: 1200, height: 630,
+      fonts: fontBuffer ? [{ name: "Noto Sans JP", data: fontBuffer, weight: 700 }] : [],
+    });
+    const renderer = new Resvg(svg);
+    try {
+      const png = renderer.render();
+      try {
+        response = new Response(new Uint8Array(png.asPng()), { headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=300" } });
+      } finally { png.free(); }
+    } finally { renderer.free(); }
+    c.executionCtx.waitUntil(cache.put(key, response.clone()));
   }
-
-  const items = (col.items || []).slice(0, 4);
-  const thumbnails = await Promise.all(items.map((it) => fetchThumbnailDataUri(it.videoId)));
-
-  const count = items.length;
-
-  // Build grid of thumbnails
-  const cards = items.map((item, idx) => ({
-    type: "div",
-    props: {
-      style: {
-        display: "flex",
-        flexDirection: "column",
-        flex: 1,
-        height: count <= 2 ? "420px" : "360px",
-        borderRadius: "12px",
-        overflow: "hidden",
-        backgroundColor: "#161d19",
-        border: "1px solid rgba(255,255,255,0.12)",
-        position: "relative",
-      },
-      children: [
-        {
-          type: "img",
-          props: {
-            src: thumbnails[idx],
-            style: {
-              width: "100%",
-              height: count <= 2 ? "320px" : "260px",
-              objectFit: "cover",
-            },
-          },
-        },
-        {
-          type: "div",
-          props: {
-            style: {
-              display: "flex",
-              flexDirection: "column",
-              padding: "12px 16px",
-              justifyContent: "center",
-              flex: 1,
-            },
-            children: [
-              {
-                type: "div",
-                props: {
-                  style: {
-                    color: "#ffffff",
-                    fontSize: count <= 2 ? "20px" : "17px",
-                    fontWeight: 700,
-                    lineHeight: 1.3,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  },
-                  children: item.title,
-                },
-              },
-              {
-                type: "div",
-                props: {
-                  style: {
-                    color: "#8da094",
-                    fontSize: "14px",
-                    marginTop: "4px",
-                  },
-                  children: item.author,
-                },
-              },
-            ],
-          },
-        },
-      ],
-    },
-  }));
-
-  const element = {
-    type: "div",
-    props: {
-      style: {
-        display: "flex",
-        flexDirection: "column",
-        width: "100%",
-        height: "100%",
-        backgroundColor: "#0b120e",
-        padding: "36px 44px",
-        fontFamily: "Noto Sans JP, sans-serif",
-        justifyContent: "space-between",
-      },
-      children: [
-        // Header
-        {
-          type: "div",
-          props: {
-            style: {
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-end",
-              borderBottom: "1px solid rgba(255,255,255,0.1)",
-              paddingBottom: "18px",
-            },
-            children: [
-              {
-                type: "div",
-                props: {
-                  style: {
-                    display: "flex",
-                    flexDirection: "column",
-                  },
-                  children: [
-                    {
-                      type: "div",
-                      props: {
-                        style: {
-                          color: "#30ba78",
-                          fontSize: "15px",
-                          fontWeight: 700,
-                          letterSpacing: "1.5px",
-                          marginBottom: "4px",
-                        },
-                        children: "BADMINTON PICKS",
-                      },
-                    },
-                    {
-                      type: "div",
-                      props: {
-                        style: {
-                          color: "#f5f7f5",
-                          fontSize: "30px",
-                          fontWeight: 700,
-                          letterSpacing: "-0.5px",
-                        },
-                        children: col.title,
-                      },
-                    },
-                  ],
-                },
-              },
-              {
-                type: "div",
-                props: {
-                  style: {
-                    color: "#a4b5aa",
-                    fontSize: "18px",
-                  },
-                  children: `選者: ${col.authorName}`,
-                },
-              },
-            ],
-          },
-        },
-        // Match Cards Row
-        {
-          type: "div",
-          props: {
-            style: {
-              display: "flex",
-              gap: "20px",
-              marginTop: "20px",
-              marginBottom: "20px",
-              width: "100%",
-            },
-            children: cards,
-          },
-        },
-        // Footer
-        {
-          type: "div",
-          props: {
-            style: {
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              borderTop: "1px solid rgba(255,255,255,0.08)",
-              paddingTop: "14px",
-              color: "#5b6d61",
-              fontSize: "14px",
-            },
-            children: [
-              {
-                type: "div",
-                props: {
-                  style: { display: "flex", alignItems: "center", gap: "8px" },
-                  children: "私を構成するバドミントンの試合 | RALLY PICKS",
-                },
-              },
-              {
-                type: "div",
-                props: {
-                  children: `${count} 試合セレクト`,
-                },
-              },
-            ],
-          },
-        },
-      ],
-    },
-  };
-
-  const svg = await satori(element as any, {
-    width: 1200,
-    height: 630,
-    fonts: [{ name: "Noto Sans JP", data: font, weight: 700 }],
-  });
-
-  const png = new Resvg(svg).render().asPng();
-
-  return new Response(png as unknown as BodyInit, {
-    headers: {
-      "Content-Type": "image/png",
-      "Cache-Control": "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400",
-    },
-  });
+  if (c.req.query("download") === "1") {
+    response = new Response(response.body, response);
+    response.headers.set("Content-Disposition", `attachment; filename="rally-picks-${id.replace(/[^\w-]/g, "")}.png"`);
+  }
+  return response;
 });
