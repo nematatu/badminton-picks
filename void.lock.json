@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "source": {
+    "name": "badminton-picks-preview",
+    "account_id": "b55858b0d5c41b055859b1e758ddf3a2",
+    "workers_dev": true,
+    "preview_urls": true,
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "badminton-picks-preview-db"
+      }
+    ]
+  },
+  "resolved": {
+    "name": "badminton-picks-preview",
+    "account_id": "b55858b0d5c41b055859b1e758ddf3a2",
+    "workers_dev": true,
+    "preview_urls": true,
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "badminton-picks-preview-db",
+        "database_id": "2a62840b-bdac-4c43-afa1-998cd2ea0508",
+        "migrations_dir": "./db/migrations"
+      }
+    ]
+  },
+  "text": "{\n  \"name\": \"badminton-picks-preview\",\n  \"account_id\": \"b55858b0d5c41b055859b1e758ddf3a2\",\n  \"workers_dev\": true,\n  \"preview_urls\": true,\n  \"d1_databases\": [\n    {\n      \"binding\": \"DB\",\n      \"database_name\": \"badminton-picks-preview-db\",\n      \"database_id\": \"2a62840b-bdac-4c43-afa1-998cd2ea0508\",\n      \"migrations_dir\": \"./db/migrations\"\n    }\n  ]\n}\n"
+}
