@@ -150,153 +150,161 @@ export default function CollectionEditor({
       <form onSubmit={save}>
         <fieldset disabled={busy} className="fieldset">
           <header className="canvas-heading">
-            <h1>私を構成する<br />バドミントンの試合</h1>
+            <h1>私を構成するバドミントンの試合</h1>
             <p>マスを選んで、YouTubeのURLを貼るだけ。</p>
           </header>
-          <div className="share-canvas">
-          <ol className="match-board" aria-label="選んだ試合">
-            {slots.map((item, slot) => (
-              <li
-                key={slot}
-                data-slot={slot}
-                className={dragOver === slot ? "board-cell is-over" : "board-cell"}
-                onDragOver={(event) => {
-                  if (!busy && draggedSlot.current !== null) {
-                    event.preventDefault();
-                    setDragOver(slot);
-                  }
-                }}
-                onDrop={(event) => {
-                  if (draggedSlot.current === null) return;
-                  event.preventDefault();
-                  move(draggedSlot.current, slot);
-                  draggedSlot.current = null;
-                  setDragOver(null);
-                }}
-              >
+          <section className="board-section" aria-label="試合を選ぶ">
+            <div className="board-progress">
+              <p><span>選んだ試合</span><strong>{items.length} / {MAX_PICKS}</strong></p>
+              <progress value={items.length} max={MAX_PICKS} aria-label="選んだ試合数" />
+            </div>
+            <p className="board-help">マスを押して追加・編集 · ドラッグで入れ替え</p>
+            <div className="share-canvas">
+              <ol className="match-board" aria-label="選んだ試合">
+                {slots.map((item, slot) => (
+                  <li
+                    key={slot}
+                    data-slot={slot}
+                    className={dragOver === slot ? "board-cell is-over" : "board-cell"}
+                    onDragOver={(event) => {
+                      if (!busy && draggedSlot.current !== null) {
+                        event.preventDefault();
+                        setDragOver(slot);
+                      }
+                    }}
+                    onDrop={(event) => {
+                      if (draggedSlot.current === null) return;
+                      event.preventDefault();
+                      move(draggedSlot.current, slot);
+                      draggedSlot.current = null;
+                      setDragOver(null);
+                    }}
+                  >
+                    <button
+                      type="button"
+                      id={`slot-${initialData.id}-${slot}`}
+                      className={item ? "board-tile" : "add-tile"}
+                      draggable={Boolean(item) && !busy}
+                      disabled={busy}
+                      title={item?.title}
+                      aria-label={item ? `${slot + 1}番の試合を編集。${item.title}` : `${slot + 1}番のマスに試合を追加`}
+                      onClick={() => setSelection({ slot })}
+                      onDragStart={(event) => {
+                        if (!item) return;
+                        draggedSlot.current = slot;
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", String(slot));
+                      }}
+                      onDragEnd={() => {
+                        draggedSlot.current = null;
+                        setDragOver(null);
+                      }}
+                      onKeyDown={(event) => {
+                        const offsets: Record<string, number> = {
+                          ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3,
+                        };
+                        const offset = offsets[event.key];
+                        if (item && offset !== undefined) {
+                          event.preventDefault();
+                          move(slot, slot + offset);
+                        }
+                      }}
+                    >
+                      {item ? <>
+                        <VideoImage videoId={item.videoId} title={item.title} />
+                        <span className="tile-title" aria-hidden="true">{item.title}</span>
+                      </> : <span className="slot-number" aria-hidden="true">{slot + 1}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {message && (
+              <p className="sr-only" role="status">
+                {message}
+              </p>
+            )}
+            {removed && (
+              <div className="undo-bar" role="status">
+                <span>試合を外しました。</span>
                 <button
                   type="button"
-                  id={`slot-${initialData.id}-${slot}`}
-                  className={item ? "board-tile" : "add-tile"}
-                  draggable={Boolean(item) && !busy}
-                  disabled={busy}
-                  title={item?.title}
-                  aria-label={item ? `${slot + 1}番の試合を編集。${item.title}` : `${slot + 1}番のマスに試合を追加`}
-                  onClick={() => setSelection({ slot })}
-                  onDragStart={(event) => {
-                    if (!item) return;
-                    draggedSlot.current = slot;
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", String(slot));
-                  }}
-                  onDragEnd={() => {
-                    draggedSlot.current = null;
-                    setDragOver(null);
-                  }}
-                  onKeyDown={(event) => {
-                    const offsets: Record<string, number> = {
-                      ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3,
-                    };
-                    const offset = offsets[event.key];
-                    if (item && offset !== undefined) {
-                      event.preventDefault();
-                      move(slot, slot + offset);
-                    }
-                  }}
-                >
-                  {item ? <VideoImage videoId={item.videoId} title={item.title} /> : <>
-                    <span className="slot-number" aria-hidden="true">{slot + 1}</span>
-                    <span className="slot-plus" aria-hidden="true">＋</span>
-                  </>}
-                  {item && <span className="tile-edit" aria-hidden="true">編集</span>}
-                </button>
-              </li>
-            ))}
-          </ol>
-          </div>
-          <p className="board-help">画像を押して編集 · ドラッグで入れ替え</p>
-          {message && (
-            <p className="sr-only" role="status">
-              {message}
-            </p>
-          )}
-          {removed && (
-            <div className="undo-bar" role="status">
-              <span>試合を外しました。</span>
-              <button
-                type="button"
-                className="text-button"
-                disabled={
-                  busy ||
-                  items.length >= MAX_PICKS ||
-                  items.some((item) => item.videoId === removed.videoId) ||
-                  Boolean(slots[removed.slot ?? 0])
-                }
-                onClick={() => {
-                  setItems((current) => positionedItems([...current, removed]));
-                  setRemoved(null);
-                  setDirty(true);
-                }}
-              >
-                元に戻す
-              </button>
-            </div>
-          )}
-          <label className="field author-field">
-            名前（任意）
-            <input type="text" value={authorName} maxLength={40} placeholder="匿名"
-              onChange={(event) => { setAuthorName(event.target.value); setDirty(true); }} />
-          </label>
-          <details className="disclosure title-setting">
-            <summary>タイトルを変更</summary>
-            <div className="settings-fields">
-              <label className="field">
-                タイトル
-                <input
-                  type="text"
-                  value={customTitle}
-                  maxLength={80}
-                  placeholder={title}
-                  onChange={(event) => {
-                    setCustomTitle(event.target.value);
+                  className="text-button"
+                  disabled={
+                    busy ||
+                    items.length >= MAX_PICKS ||
+                    items.some((item) => item.videoId === removed.videoId) ||
+                    Boolean(slots[removed.slot ?? 0])
+                  }
+                  onClick={() => {
+                    setItems((current) => positionedItems([...current, removed]));
+                    setRemoved(null);
                     setDirty(true);
                   }}
-                />
-              </label>
-            </div>
-          </details>
-          {saveError && (
-            <p className="error" role="alert">
-              {saveError}
-            </p>
-          )}
-          <div className="save-bar">
-            <button className="btn btn-primary" type="submit"
-              disabled={busy || Boolean(selection) || !items.length}>
-              {phase === "saving" ? "保存中…" : submitLabel}
-            </button>
-            <span className="muted">{dirty ? "共有すると変更が保存されます" : "1試合から共有できます"}</span>
-          </div>
-          <details className="disclosure owner-info">
-            <summary>編集について</summary>
-            <p>作成したブラウザから編集できます。Cookieを削除すると編集できなくなります。</p>
-          </details>
-          {isEdit && (
-            <details className="disclosure">
-              <summary>この選集を削除</summary>
-              <div className="danger-body">
-                <p>公開ページと共有画像が見られなくなります。この操作は取り消せません。</p>
-                <button
-                  type="button"
-                  className="text-button danger"
-                  disabled={busy}
-                  onClick={deleteCollection}
                 >
-                  {phase === "deleting" ? "削除中…" : "削除する"}
+                  元に戻す
                 </button>
               </div>
+            )}
+          </section>
+          <div className="publish-fields">
+            <label className="field author-field">
+              名前（任意）
+              <input type="text" value={authorName} maxLength={40} placeholder="匿名"
+                onChange={(event) => { setAuthorName(event.target.value); setDirty(true); }} />
+            </label>
+            <details className="disclosure title-setting">
+              <summary>タイトルを変更</summary>
+              <div className="settings-fields">
+                <label className="field">
+                  タイトル
+                  <input
+                    type="text"
+                    value={customTitle}
+                    maxLength={80}
+                    placeholder={title}
+                    onChange={(event) => {
+                      setCustomTitle(event.target.value);
+                      setDirty(true);
+                    }}
+                  />
+                </label>
+              </div>
             </details>
-          )}
+            {saveError && (
+              <p className="error" role="alert">
+                {saveError}
+              </p>
+            )}
+            <div className="save-bar">
+              <button className="btn btn-primary" type="submit"
+                disabled={busy || Boolean(selection) || !items.length}>
+                {phase === "saving" ? "保存中…" : submitLabel}
+              </button>
+              <span className="muted">{dirty ? "共有すると変更が保存されます" : "1試合から共有できます"}</span>
+            </div>
+            <details className="disclosure owner-info">
+              <summary>編集について</summary>
+              <p>作成したブラウザから編集できます。Cookieを削除すると編集できなくなります。</p>
+            </details>
+            {isEdit && (
+              <details className="disclosure">
+                <summary>この選集を削除</summary>
+                <div className="danger-body">
+                  <p>公開ページと共有画像が見られなくなります。この操作は取り消せません。</p>
+                  <button
+                    type="button"
+                    className="text-button danger"
+                    disabled={busy}
+                    onClick={deleteCollection}
+                  >
+                    {phase === "deleting" ? "削除中…" : "削除する"}
+                  </button>
+                </div>
+              </details>
+            )}
+          </div>
         </fieldset>
       </form>
       {selection && (

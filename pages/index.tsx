@@ -9,8 +9,8 @@ export default function HomePage({ newId, myCollections, recentCollections }: Pr
   const visible = showMine ? myCollections : recentCollections;
   return (
     <div className="home">
-      <CollectionEditor initialData={{ id: newId }} submitUrl="/new" submitLabel="共有する" />
-      <section className="community" aria-label="公開された選集">
+      <CollectionEditor initialData={{ id: newId }} submitUrl="/new" submitLabel="ページを作成して共有" />
+      <section id="community" className="community" aria-label="公開された選集">
         <header className="home-toolbar">
           <div className="collection-tabs" role="group" aria-label="表示する選集">
             <button type="button" aria-pressed={!showMine} onClick={() => setShowMine(false)}>

@@ -30,21 +30,23 @@ export default function CollectionDetailPage({ collection, pageUrl }: Props) {
         <h1>{title}</h1>
         <p className="muted">{authorName}</p>
       </header>
-      <ol className="match-board" aria-label="選ばれた試合">
-        {boardSlots(items).map((item, slot) => (
-          <li className="board-cell" key={slot} data-slot={slot}>
-            {item ? <a
-              className="board-tile"
-              href={`https://www.youtube.com/watch?v=${item.videoId}`}
-              target="_blank" rel="noreferrer"
-              aria-label={`${slot + 1}番の試合。${item.title}をYouTubeで見る`}
-              title={item.title}>
-              <VideoImage videoId={item.videoId} title={item.title} />
-              <span className="tile-edit" aria-hidden="true">YouTubeで見る ↗</span>
-            </a> : <span className="empty-tile" aria-hidden="true"><span className="slot-number">{slot + 1}</span></span>}
-          </li>
-        ))}
-      </ol>
+      <div className="share-canvas">
+        <ol className="match-board" aria-label="選ばれた試合">
+          {boardSlots(items).map((item, slot) => (
+            <li className="board-cell" key={slot} data-slot={slot}>
+              {item ? <a
+                className="board-tile"
+                href={`https://www.youtube.com/watch?v=${item.videoId}`}
+                target="_blank" rel="noreferrer"
+                aria-label={`${slot + 1}番の試合。${item.title}をYouTubeで見る`}
+                title={item.title}>
+                <VideoImage videoId={item.videoId} title={item.title} />
+                <span className="tile-title" aria-hidden="true">{item.title}</span>
+              </a> : <span className="empty-tile" aria-hidden="true"><span className="slot-number">{slot + 1}</span></span>}
+            </li>
+          ))}
+        </ol>
+      </div>
       <div className="detail-actions">
         <CopyButton value={pageUrl} />
         {isOwner && (

@@ -169,47 +169,55 @@ export default function VideoDialog({
           <p className="muted">{lookup.item.author}</p>
         </div>
       )}
-      <label className="field note-field">
-        ひとこと（任意）
-        <textarea
-          value={note}
-          rows={2}
-          maxLength={240}
-          onChange={(event) => setNote(event.target.value)}
-          placeholder="この試合を選んだ理由など"
-        />
-      </label>
-      <div className="tile-options">
-        <div className="move-buttons" aria-label="並び替え">
-          <span className="muted">マス {position + 1} / {MAX_PICKS}</span>
-          <button
-            type="button"
-            className="btn"
-            disabled={position === 0 || lookup.kind === "loading"}
-            onClick={() => setPosition((value) => value - 1)}
-          >
-            前へ
-          </button>
-          <button
-            type="button"
-            className="btn"
-            disabled={position === MAX_PICKS - 1 || lookup.kind === "loading"}
-            onClick={() => setPosition((value) => value + 1)}
-          >
-            後ろへ
-          </button>
+      {lookup.kind !== "ready" && (
+        <div className="preview-placeholder" aria-hidden="true">
+          URLを貼ると、ここに試合が表示されます
         </div>
-        {item && (
-          <button
-            type="button"
-            className="text-button danger"
-            disabled={lookup.kind === "loading"}
-            onClick={onRemove}
-          >
-            この試合を外す
-          </button>
-        )}
-      </div>
+      )}
+      <details className="disclosure video-settings" open={Boolean(item?.note)}>
+        <summary>メモ・並び順</summary>
+        <label className="field note-field">
+          ひとこと（任意）
+          <textarea
+            value={note}
+            rows={2}
+            maxLength={240}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="この試合を選んだ理由など"
+          />
+        </label>
+        <div className="tile-options">
+          <div className="move-buttons" aria-label="並び替え">
+            <span className="muted">マス {position + 1} / {MAX_PICKS}</span>
+            <button
+              type="button"
+              className="btn"
+              disabled={position === 0 || lookup.kind === "loading"}
+              onClick={() => setPosition((value) => value - 1)}
+            >
+              前へ
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={position === MAX_PICKS - 1 || lookup.kind === "loading"}
+              onClick={() => setPosition((value) => value + 1)}
+            >
+              後ろへ
+            </button>
+          </div>
+        </div>
+      </details>
+      {item && (
+        <button
+          type="button"
+          className="text-button danger"
+          disabled={lookup.kind === "loading"}
+          onClick={onRemove}
+        >
+          この試合を外す
+        </button>
+      )}
       <div className="dialog-actions">
         <button className="btn" type="button" onClick={onClose}>
           キャンセル
