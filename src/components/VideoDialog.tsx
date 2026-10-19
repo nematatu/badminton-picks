@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { PickItem } from "../../db/schema";
-import { errorSchema } from "../lib/collection";
+import { MAX_PICKS, errorSchema } from "../lib/collection";
 import { extractYouTubeVideoId, youTubeMetaSchema } from "../lib/youtube";
 import { VideoImage } from "./CollectionPreview";
 
@@ -12,16 +12,14 @@ type Lookup =
 
 export default function VideoDialog({
   item,
-  index,
-  count,
+  slot,
   existingIds,
   onApply,
   onRemove,
   onClose,
 }: {
   item?: PickItem;
-  index: number;
-  count: number;
+  slot: number;
   existingIds: string[];
   onApply: (item: PickItem, position: number) => void;
   onRemove: () => void;
@@ -31,7 +29,7 @@ export default function VideoDialog({
   const controller = useRef<AbortController | null>(null);
   const [url, setUrl] = useState(item ? `https://www.youtube.com/watch?v=${item.videoId}` : "");
   const [retry, setRetry] = useState(0);
-  const [position, setPosition] = useState(index);
+  const [position, setPosition] = useState(slot);
   const [note, setNote] = useState(item?.note || "");
   const [lookup, setLookup] = useState<Lookup>(item ? { kind: "ready", item } : { kind: "idle" });
 
@@ -108,7 +106,9 @@ export default function VideoDialog({
       aria-labelledby="video-dialog-title"
     >
       <div className="dialog-head">
-        <h2 id="video-dialog-title">{item ? "試合を編集" : "試合を追加"}</h2>
+        <h2 id="video-dialog-title">
+          {slot + 1}番の試合{item ? "を編集" : "を追加"}
+        </h2>
         <button type="button" className="close-button" onClick={onClose} aria-label="閉じる">
           ×
         </button>
@@ -179,29 +179,27 @@ export default function VideoDialog({
           placeholder="この試合を選んだ理由など"
         />
       </label>
-      {item && (
-        <div className="tile-options">
-          <div className="move-buttons" aria-label="並び替え">
-            <span className="muted">
-              {position + 1} / {count}
-            </span>
-            <button
-              type="button"
-              className="btn"
-              disabled={position === 0 || lookup.kind === "loading"}
-              onClick={() => setPosition((value) => value - 1)}
-            >
-              前へ
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={position === count - 1 || lookup.kind === "loading"}
-              onClick={() => setPosition((value) => value + 1)}
-            >
-              後ろへ
-            </button>
-          </div>
+      <div className="tile-options">
+        <div className="move-buttons" aria-label="並び替え">
+          <span className="muted">マス {position + 1} / {MAX_PICKS}</span>
+          <button
+            type="button"
+            className="btn"
+            disabled={position === 0 || lookup.kind === "loading"}
+            onClick={() => setPosition((value) => value - 1)}
+          >
+            前へ
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={position === MAX_PICKS - 1 || lookup.kind === "loading"}
+            onClick={() => setPosition((value) => value + 1)}
+          >
+            後ろへ
+          </button>
+        </div>
+        {item && (
           <button
             type="button"
             className="text-button danger"
@@ -210,8 +208,8 @@ export default function VideoDialog({
           >
             この試合を外す
           </button>
-        </div>
-      )}
+        )}
+      </div>
       <div className="dialog-actions">
         <button className="btn" type="button" onClick={onClose}>
           キャンセル

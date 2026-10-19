@@ -4,9 +4,10 @@ import type { PickItem } from "../../db/schema";
 import { VideoImage } from "./CollectionPreview";
 import VideoDialog from "./VideoDialog";
 import { MAX_PICKS, errorSchema, resultSchema } from "../lib/collection";
+import { boardSlots, placeItem, positionedItems } from "../lib/board";
 
 type Phase = "idle" | "saving" | "deleting";
-type Selection = { kind: "add" } | { kind: "edit"; videoId: string };
+type Selection = { slot: number };
 
 export default function CollectionEditor({
   initialData,
@@ -32,16 +33,17 @@ export default function CollectionEditor({
   const [authorName, setAuthorName] = useState(
     initialData.authorName === "匿名" ? "" : initialData.authorName || "",
   );
-  const [items, setItems] = useState<PickItem[]>(initialData.items || []);
+  const [items, setItems] = useState<PickItem[]>(positionedItems(initialData.items || []));
   const [phase, setPhase] = useState<Phase>("idle");
   const [saveError, setSaveError] = useState("");
   const [message, setMessage] = useState("");
-  const [removed, setRemoved] = useState<{ item: PickItem; index: number } | null>(null);
+  const [removed, setRemoved] = useState<PickItem | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [dragOver, setDragOver] = useState<string | null>(null);
-  const draggedId = useRef<string | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+  const draggedSlot = useRef<number | null>(null);
   const [dirty, setDirty] = useState(false);
 
+  const slots = boardSlots(items);
   const busy = phase !== "idle";
   const title = customTitle.trim() || `私を構成するバドミントンの${items.length}試合`;
 
@@ -73,15 +75,12 @@ export default function CollectionEditor({
   }, [dirty]);
 
   function move(from: number, to: number) {
-    if (busy || from === to || to < 0 || to >= items.length) return;
-    setItems((current) => {
-      const next = [...current];
-      const [item] = next.splice(from, 1);
-      next.splice(to, 0, item);
-      return next;
-    });
+    const item = slots[from];
+    if (busy || !item || from === to || to < 0 || to >= MAX_PICKS) return;
+    setItems((current) => placeItem(current, item, from, to));
     setDirty(true);
-    setMessage(`${to + 1}番目に並び替えました。`);
+    setMessage(`${to + 1}番のマスに移動しました。`);
+    requestAnimationFrame(() => document.getElementById(`slot-${initialData.id}-${to}`)?.focus());
   }
 
   async function save(event: FormEvent) {
@@ -144,100 +143,78 @@ export default function CollectionEditor({
     }
   }
 
-  const selectedIndex =
-    selection?.kind === "edit" ? items.findIndex((item) => item.videoId === selection.videoId) : -1;
-  const selectedItem = selectedIndex >= 0 ? items[selectedIndex] : undefined;
+  const selectedItem = selection ? slots[selection.slot] : undefined;
 
   return (
     <div className="editor">
       <form onSubmit={save}>
         <fieldset disabled={busy} className="fieldset">
-          <header className="board-toolbar">
-            <h1>{isEdit ? "試合を編集" : "好きな試合を選ぶ"}</h1>
-            <span className="counter">
-              {items.length} / {MAX_PICKS}
-            </span>
+          <header className="canvas-heading">
+            <h1>私を構成する<br />バドミントンの試合</h1>
+            <p>マスを選んで、YouTubeのURLを貼るだけ。</p>
           </header>
+          <div className="share-canvas">
           <ol className="match-board" aria-label="選んだ試合">
-            {items.map((item, index) => (
+            {slots.map((item, slot) => (
               <li
-                key={item.videoId}
-                className={dragOver === item.videoId ? "board-cell is-over" : "board-cell"}
+                key={slot}
+                data-slot={slot}
+                className={dragOver === slot ? "board-cell is-over" : "board-cell"}
                 onDragOver={(event) => {
-                  if (!busy && draggedId.current) {
+                  if (!busy && draggedSlot.current !== null) {
                     event.preventDefault();
-                    setDragOver(item.videoId);
+                    setDragOver(slot);
                   }
                 }}
                 onDrop={(event) => {
-                  if (!draggedId.current) return;
+                  if (draggedSlot.current === null) return;
                   event.preventDefault();
-                  const from = items.findIndex((pick) => pick.videoId === draggedId.current);
-                  if (from >= 0) move(from, index);
-                  draggedId.current = null;
+                  move(draggedSlot.current, slot);
+                  draggedSlot.current = null;
                   setDragOver(null);
                 }}
               >
                 <button
                   type="button"
-                  className="board-tile"
-                  draggable={!busy}
+                  id={`slot-${initialData.id}-${slot}`}
+                  className={item ? "board-tile" : "add-tile"}
+                  draggable={Boolean(item) && !busy}
                   disabled={busy}
-                  title={item.title}
-                  aria-label={`${index + 1}試合目を編集。${item.title}`}
-                  onClick={() => setSelection({ kind: "edit", videoId: item.videoId })}
+                  title={item?.title}
+                  aria-label={item ? `${slot + 1}番の試合を編集。${item.title}` : `${slot + 1}番のマスに試合を追加`}
+                  onClick={() => setSelection({ slot })}
                   onDragStart={(event) => {
-                    draggedId.current = item.videoId;
+                    if (!item) return;
+                    draggedSlot.current = slot;
                     event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", item.videoId);
+                    event.dataTransfer.setData("text/plain", String(slot));
                   }}
                   onDragEnd={() => {
-                    draggedId.current = null;
+                    draggedSlot.current = null;
                     setDragOver(null);
                   }}
                   onKeyDown={(event) => {
                     const offsets: Record<string, number> = {
-                      ArrowLeft: -1,
-                      ArrowRight: 1,
-                      ArrowUp: -3,
-                      ArrowDown: 3,
+                      ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3,
                     };
                     const offset = offsets[event.key];
-                    if (offset !== undefined) {
+                    if (item && offset !== undefined) {
                       event.preventDefault();
-                      move(index, index + offset);
+                      move(slot, slot + offset);
                     }
                   }}
                 >
-                  <VideoImage videoId={item.videoId} title={item.title} />
-                  <span className="tile-edit" aria-hidden="true">
-                    編集
-                  </span>
+                  {item ? <VideoImage videoId={item.videoId} title={item.title} /> : <>
+                    <span className="slot-number" aria-hidden="true">{slot + 1}</span>
+                    <span className="slot-plus" aria-hidden="true">＋</span>
+                  </>}
+                  {item && <span className="tile-edit" aria-hidden="true">編集</span>}
                 </button>
               </li>
-            ))}
-            {items.length < MAX_PICKS && (
-              <li className="board-cell">
-                <button
-                  type="button"
-                  className="add-tile"
-                  onClick={() => setSelection({ kind: "add" })}
-                  aria-label="YouTubeの試合を追加"
-                >
-                  <span aria-hidden="true">＋</span>
-                  <span>試合を追加</span>
-                </button>
-              </li>
-            )}
-            {Array.from({ length: Math.max(0, MAX_PICKS - items.length - 1) }, (_, index) => (
-              <li key={`empty-${index}`} className="board-cell ghost-tile" aria-hidden="true" />
             ))}
           </ol>
-          <p className="board-help">
-            {items.length
-              ? "画像を押すと編集・入れ替え。ドラッグで並び替え。"
-              : "＋からYouTubeの試合URLを追加できます。1試合から共有できます。"}
-          </p>
+          </div>
+          <p className="board-help">画像を押して編集 · ドラッグで入れ替え</p>
           {message && (
             <p className="sr-only" role="status">
               {message}
@@ -252,14 +229,11 @@ export default function CollectionEditor({
                 disabled={
                   busy ||
                   items.length >= MAX_PICKS ||
-                  items.some((item) => item.videoId === removed.item.videoId)
+                  items.some((item) => item.videoId === removed.videoId) ||
+                  Boolean(slots[removed.slot ?? 0])
                 }
                 onClick={() => {
-                  setItems((current) => [
-                    ...current.slice(0, removed.index),
-                    removed.item,
-                    ...current.slice(removed.index),
-                  ]);
+                  setItems((current) => positionedItems([...current, removed]));
                   setRemoved(null);
                   setDirty(true);
                 }}
@@ -268,8 +242,13 @@ export default function CollectionEditor({
               </button>
             </div>
           )}
-          <details className="disclosure">
-            <summary>タイトル・名前を変更</summary>
+          <label className="field author-field">
+            名前（任意）
+            <input type="text" value={authorName} maxLength={40} placeholder="匿名"
+              onChange={(event) => { setAuthorName(event.target.value); setDirty(true); }} />
+          </label>
+          <details className="disclosure title-setting">
+            <summary>タイトルを変更</summary>
             <div className="settings-fields">
               <label className="field">
                 タイトル
@@ -284,19 +263,6 @@ export default function CollectionEditor({
                   }}
                 />
               </label>
-              <label className="field">
-                名前（任意）
-                <input
-                  type="text"
-                  value={authorName}
-                  maxLength={40}
-                  placeholder="匿名"
-                  onChange={(event) => {
-                    setAuthorName(event.target.value);
-                    setDirty(true);
-                  }}
-                />
-              </label>
             </div>
           </details>
           {saveError && (
@@ -305,16 +271,11 @@ export default function CollectionEditor({
             </p>
           )}
           <div className="save-bar">
-            <span className="muted">
-              {dirty ? "変更はまだ保存されていません" : "共有すると誰でも見られます"}
-            </span>
-            <button
-              className="btn btn-primary"
-              type="submit"
-              disabled={busy || Boolean(selection) || !items.length}
-            >
+            <button className="btn btn-primary" type="submit"
+              disabled={busy || Boolean(selection) || !items.length}>
               {phase === "saving" ? "保存中…" : submitLabel}
             </button>
+            <span className="muted">{dirty ? "共有すると変更が保存されます" : "1試合から共有できます"}</span>
           </div>
           <details className="disclosure owner-info">
             <summary>編集について</summary>
@@ -341,27 +302,21 @@ export default function CollectionEditor({
       {selection && (
         <VideoDialog
           item={selectedItem}
-          index={selectedIndex}
-          count={items.length}
+          slot={selection.slot}
           existingIds={items.map((item) => item.videoId)}
           onClose={() => setSelection(null)}
           onRemove={() => {
             if (!selectedItem) return;
-            setRemoved({ item: selectedItem, index: selectedIndex });
+            setRemoved(selectedItem);
             setItems((current) => current.filter((item) => item.videoId !== selectedItem.videoId));
             setSelection(null);
             setDirty(true);
           }}
           onApply={(item, position) => {
-            setItems((current) => {
-              if (selection.kind === "add") return [...current, item];
-              const next = current.filter((pick) => pick.videoId !== selection.videoId);
-              next.splice(position, 0, item);
-              return next;
-            });
+            setItems((current) => placeItem(current, item, selection.slot, position));
             setSelection(null);
             setDirty(true);
-            setMessage(selection.kind === "edit" ? "試合を変更しました。" : "試合を追加しました。");
+            setMessage(selectedItem ? "試合を変更しました。" : "試合を追加しました。");
           }}
         />
       )}

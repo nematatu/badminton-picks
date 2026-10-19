@@ -4,6 +4,7 @@ import { loadCollection } from "../../src/lib/collection.server";
 import satori from "satori/standalone";
 import { Resvg } from "@resvg/resvg-wasm";
 import { initEngine } from "../../src/lib/og-engine";
+import { boardSlots } from "../../src/lib/board";
 
 let fontData: ArrayBuffer | undefined;
 async function font() {
@@ -38,7 +39,7 @@ export const GET = defineHandler(async (c) => {
   if (!id) return c.text("Not found", 404);
   const col = await loadCollection(id);
   if (!col) return c.text("Not found", 404);
-  const cache = await caches.open("rally-picks-og-v3");
+  const cache = await caches.open("rally-picks-og-v4");
   const key = new Request(new URL(`/og/${id}?v=${col.revision}`, c.req.url));
   const cached = await cache.match(key);
   let response: Response;
@@ -47,23 +48,26 @@ export const GET = defineHandler(async (c) => {
     await initEngine();
     const items = col.items.slice(0, 9);
     const [fontBuffer, ...images] = await Promise.all([font(), ...items.map((item) => thumbnail(item.videoId))]);
-    const columns = items.length <= 2 ? items.length : 3;
-    const rows = Math.ceil(items.length / columns);
-    const width = (1136 - (columns - 1) * 8) / columns;
-    const height = (420 - (rows - 1) * 8) / rows;
-    const cells = images.map((src, index) => h("div", { key: index, style: {
-      display: "flex", width, height, position: "relative", background: "#e7eae7", overflow: "hidden", alignItems: "center", justifyContent: "center",
-    } }, src ? h("img", { src, width, height, style: { objectFit: "contain" } }) : (
-      fontBuffer ? h("div", { style: { fontSize: 16, color: "#626862" } }, "画像を取得できません") : null
-    )));
-    const element = h("div", { style: { display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: 32,
-      background: "#ffffff", color: "#242624", fontFamily: "Noto Sans JP", justifyContent: "space-between" } },
-      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", height: 38, borderBottom: "1px solid #dfe2df", paddingBottom: 12 } },
-        fontBuffer && h("div", { style: { fontSize: 20, color: "#176b4c", fontWeight: 700 } }, "RALLY PICKS"),
-        fontBuffer && h("div", { style: { fontSize: 16, color: "#626862" } }, `${items.length}試合`)),
-      fontBuffer && h("div", { style: { display: "flex", height: 54, alignItems: "center", fontSize: 26, fontWeight: 700, overflow: "hidden" } }, col.title.slice(0, 42)),
-      h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, width: 1136, height: 420 } }, ...cells),
-      fontBuffer && h("div", { style: { display: "flex", alignItems: "center", fontSize: 14, color: "#626862", height: 24 } }, `選者 ${col.authorName}`),
+    const slots = boardSlots(items);
+    const width = 284;
+    const height = 159.75;
+    const cells = slots.map((item, slot) => {
+      const src = item ? images[items.findIndex((pick) => pick.videoId === item.videoId)] : null;
+      return h("div", { key: slot, style: {
+        display: "flex", width, height, position: "relative", background: item ? "#ffffff" : "#ffeb80",
+        border: "1px solid #1a1a1a", overflow: "hidden", alignItems: "center", justifyContent: "center",
+      } }, src ? h("img", { src, width, height, style: { objectFit: "contain" } }) : (
+        fontBuffer ? h("div", { style: { fontSize: item ? 14 : 22, color: "#595026" } }, item ? "画像を取得できません" : String(slot + 1)) : null
+      ));
+    });
+    const element = h("div", { style: { display: "flex", flexDirection: "column", alignItems: "center",
+      width: "100%", height: "100%", padding: 20, background: "#ffd600", color: "#1a1a1a",
+      fontFamily: "Noto Sans JP", justifyContent: "space-between" } },
+      fontBuffer && h("div", { style: { display: "flex", height: 44, alignItems: "center", fontSize: 26,
+        fontWeight: 700, overflow: "hidden", maxWidth: 1120 } }, col.title.slice(0, 42)),
+      h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, width: 864, height: 491.25 } }, ...cells),
+      fontBuffer && h("div", { style: { display: "flex", alignItems: "center", fontSize: 15, height: 24 } },
+        `${col.authorName} / ${items.length}試合 / RALLY PICKS`),
     );
     const svg = await satori(element, { width: 1200, height: 630,
       fonts: fontBuffer ? [{ name: "Noto Sans JP", data: fontBuffer, weight: 700 }] : [],

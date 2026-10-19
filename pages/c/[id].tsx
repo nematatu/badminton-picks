@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "@void/react";
 import { VideoImage } from "../../src/components/CollectionPreview";
+import { boardSlots } from "../../src/lib/board";
 import CopyButton from "../../src/components/CopyButton";
 import type { Props } from "./[id].server";
 
@@ -30,25 +31,18 @@ export default function CollectionDetailPage({ collection, pageUrl }: Props) {
         <p className="muted">{authorName}</p>
       </header>
       <ol className="match-board" aria-label="選ばれた試合">
-        {items.map((item) => (
-          <li className="board-cell" key={item.videoId}>
-            <a
+        {boardSlots(items).map((item, slot) => (
+          <li className="board-cell" key={slot} data-slot={slot}>
+            {item ? <a
               className="board-tile"
               href={`https://www.youtube.com/watch?v=${item.videoId}`}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`${item.title}をYouTubeで見る`}
-              title={item.title}
-            >
+              target="_blank" rel="noreferrer"
+              aria-label={`${slot + 1}番の試合。${item.title}をYouTubeで見る`}
+              title={item.title}>
               <VideoImage videoId={item.videoId} title={item.title} />
-              <span className="tile-edit" aria-hidden="true">
-                YouTubeで見る ↗
-              </span>
-            </a>
+              <span className="tile-edit" aria-hidden="true">YouTubeで見る ↗</span>
+            </a> : <span className="empty-tile" aria-hidden="true"><span className="slot-number">{slot + 1}</span></span>}
           </li>
-        ))}
-        {Array.from({ length: 9 - items.length }, (_, index) => (
-          <li key={`empty-${index}`} className="board-cell ghost-tile" aria-hidden="true" />
         ))}
       </ol>
       <div className="detail-actions">

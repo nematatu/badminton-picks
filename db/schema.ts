@@ -6,6 +6,7 @@ export interface PickItem {
   title: string;
   author: string;
   note?: string;
+  slot?: number;
 }
 
 export const collections = sqliteTable(
