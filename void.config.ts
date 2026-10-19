@@ -9,7 +9,7 @@ export default defineConfig({
     meta: [
       { charset: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#176b4c" },
+      { name: "theme-color", content: "#f8faf8" },
     ],
     link: [
       { rel: "manifest", href: "/manifest.webmanifest" },

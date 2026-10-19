@@ -1,38 +1,106 @@
 import { useState } from "react";
 import { Link } from "@void/react";
-import MatchInfo from "../../src/components/MatchInfo";
+import { VideoImage } from "../../src/components/CollectionPreview";
 import CopyButton from "../../src/components/CopyButton";
-import ActionMenu from "../../src/components/ActionMenu";
 import type { Props } from "./[id].server";
 
 export default function CollectionDetailPage({ collection, pageUrl }: Props) {
   const [feedback, setFeedback] = useState("");
   const { id, title, authorName, items, isOwner, revision } = collection;
-  const tweetUrl = `https://x.com/intent/post?text=${encodeURIComponent(`${title}\n選者 ${authorName}\n#私を構成するバドミントン試合`)}&url=${encodeURIComponent(pageUrl)}`;
+  const tweetText = `${title}\n選者: ${authorName}\n#私を構成するバドミントン試合`;
+  const tweetUrl = `https://x.com/intent/post?text=${encodeURIComponent(tweetText)}&url=${encodeURIComponent(pageUrl)}`;
 
   async function share() {
-    if (!navigator.share) { setFeedback("このブラウザでは、リンクのコピーをご利用ください。"); return; }
-    try { await navigator.share({ title, url: pageUrl }); }
-    catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError")) setFeedback("共有できませんでした。リンクのコピーをお試しください。");
+    if (!navigator.share) {
+      setFeedback("この端末ではリンクのコピーをご利用ください。");
+      return;
+    }
+    try {
+      await navigator.share({ title, url: pageUrl });
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError"))
+        setFeedback("共有できませんでした。リンクのコピーをお試しください。");
     }
   }
 
-  return <div className="detail-container">
-    <header className="detail-heading"><h1>{title}</h1><p className="detail-meta">{authorName} · {items.length}試合</p></header>
-    <div className="detail-actions">
-      <CopyButton value={pageUrl} />
-      {isOwner && <Link className="btn" href={`/c/${id}/edit`}>編集する</Link>}
-      <ActionMenu label="その他の共有方法">
-        <button type="button" onClick={share}>端末の共有を開く</button>
-        <a href={tweetUrl} target="_blank" rel="noreferrer">Xで共有する</a>
-        <a href={`/og/${id}?v=${revision}&download=1`} download={`rally-picks-${id}.png`}>画像を保存</a>
-      </ActionMenu>
+  return (
+    <div className="detail">
+      <header className="detail-head">
+        <h1>{title}</h1>
+        <p className="muted">{authorName}</p>
+      </header>
+      <ol className="match-board" aria-label="選ばれた試合">
+        {items.map((item) => (
+          <li className="board-cell" key={item.videoId}>
+            <a
+              className="board-tile"
+              href={`https://www.youtube.com/watch?v=${item.videoId}`}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`${item.title}をYouTubeで見る`}
+              title={item.title}
+            >
+              <VideoImage videoId={item.videoId} title={item.title} />
+              <span className="tile-edit" aria-hidden="true">
+                YouTubeで見る ↗
+              </span>
+            </a>
+          </li>
+        ))}
+        {Array.from({ length: 9 - items.length }, (_, index) => (
+          <li key={`empty-${index}`} className="board-cell ghost-tile" aria-hidden="true" />
+        ))}
+      </ol>
+      <div className="detail-actions">
+        <CopyButton value={pageUrl} />
+        {isOwner && (
+          <Link className="btn" href={`/c/${id}/edit`}>
+            編集する
+          </Link>
+        )}
+        <details className="share-menu">
+          <summary className="btn" aria-label="その他の共有方法">
+            その他
+          </summary>
+          <div className="share-options">
+            <button type="button" onClick={share}>
+              端末で共有
+            </button>
+            <a href={tweetUrl} target="_blank" rel="noreferrer">
+              Xで共有
+            </a>
+            <a href={`/og/${id}?v=${revision}&download=1`} download={`rally-picks-${id}.png`}>
+              画像を保存
+            </a>
+          </div>
+        </details>
+      </div>
+      {feedback && (
+        <p className="muted" role="status">
+          {feedback}
+        </p>
+      )}
+      {items.some((item) => item.note) && (
+        <details className="disclosure collection-notes">
+          <summary>選んだ理由を読む</summary>
+          <div>
+            {items
+              .filter((item) => item.note)
+              .map((item) => (
+                <div className="collection-note" key={item.videoId}>
+                  <a
+                    href={`https://www.youtube.com/watch?v=${item.videoId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {item.title}
+                  </a>
+                  <p>{item.note}</p>
+                </div>
+              ))}
+          </div>
+        </details>
+      )}
     </div>
-    {feedback && <p role="status" className="status-message">{feedback}</p>}
-    <ol className="picks-list public-picks">{items.map((item, index) => <li className="pick-row" key={item.videoId}>
-      <span className="pick-number" aria-label={`${index + 1}試合目`}>{index + 1}</span>
-      <MatchInfo item={item}>{item.note && <p className="match-note">{item.note}</p>}</MatchInfo>
-    </li>)}</ol>
-  </div>;
+  );
 }
