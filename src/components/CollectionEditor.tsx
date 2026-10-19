@@ -60,7 +60,14 @@ export default function CollectionEditor({
       )
         return;
       const link = event.target.closest("a");
-      if (!link || link.target === "_blank" || link.hasAttribute("download") || link.hash) return;
+      if (!link || link.target === "_blank" || link.hasAttribute("download")) return;
+      if (
+        link.hash &&
+        link.origin === window.location.origin &&
+        link.pathname === window.location.pathname &&
+        link.search === window.location.search
+      )
+        return;
       if (!window.confirm("保存していない変更があります。移動しますか？")) {
         event.preventDefault();
         event.stopPropagation();
